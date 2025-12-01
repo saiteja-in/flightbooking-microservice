@@ -1,0 +1,76 @@
+package com.saiteja.flightservice.service.impl;
+
+import com.saiteja.flightservice.dto.flight.FlightCreateRequest;
+import com.saiteja.flightservice.dto.flight.FlightResponse;
+import com.saiteja.flightservice.exception.DuplicateResourceException;
+import com.saiteja.flightservice.exception.ResourceNotFoundException;
+import com.saiteja.flightservice.model.Flight;
+import com.saiteja.flightservice.repository.FlightRepository;
+import com.saiteja.flightservice.service.FlightService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+@Service
+@RequiredArgsConstructor
+public class FlightServiceImpl implements FlightService {
+
+    private final FlightRepository flightRepository;
+
+    @Override
+    public Mono<FlightResponse> createFlight(FlightCreateRequest request) {
+        return flightRepository.existsByFlightNumber(request.getFlightNumber())
+                .flatMap(exists -> {
+                    if (exists) {
+                        return Mono.error(new DuplicateResourceException("Flight already exists with number: " + request.getFlightNumber()));
+                    }
+
+                    Flight flight = Flight.builder()
+                            .flightNumber(request.getFlightNumber().trim())
+                            .airline(request.getAirline())
+                            .originAirport(request.getOriginAirport().trim().toUpperCase())
+                            .destinationAirport(request.getDestinationAirport().trim().toUpperCase())
+                            .seatCapacity(request.getSeatCapacity())
+                            .build();
+
+                    return flightRepository.save(flight)
+                            .map(this::toResponse);
+                });
+    }
+
+    @Override
+    public Flux<FlightResponse> getAllFlights() {
+        return flightRepository.findAll()
+                .map(this::toResponse);
+    }
+
+    @Override
+    public Mono<FlightResponse> getFlightByFlightNumber(String flightNumber) {
+        return flightRepository.findByFlightNumber(flightNumber.trim().toUpperCase())
+                .switchIfEmpty(Mono.error(
+                        new ResourceNotFoundException("Flight not found with number: " + flightNumber)
+                ))
+                .map(this::toResponse);
+    }
+
+    @Override
+    public Mono<String> deleteFlight(String id) {
+        return flightRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Flight not found: " + id)))
+                .flatMap(flight -> flightRepository.delete(flight).thenReturn("Deleted"));
+    }
+
+    private FlightResponse toResponse(Flight flight) {
+        return FlightResponse.builder()
+                .id(flight.getId())
+                .flightNumber(flight.getFlightNumber())
+                .airline(flight.getAirline())
+                .originAirport(flight.getOriginAirport())
+                .destinationAirport(flight.getDestinationAirport())
+                .seatCapacity(flight.getSeatCapacity())
+                .build();
+    }
+}
+
+
